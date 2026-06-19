@@ -11,9 +11,6 @@ STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
 COR_BRANCO = 0
-COR_VERDE = 1
-COR_PRETO = 2
-
 GALE_MAXIMO = 2
 NIVEL_MAXIMO = 4
 
@@ -21,12 +18,11 @@ sinal_ativo = None
 processados = set()
 historico_cores = []
 
-stats = {
-    "GREEN": 0,
-    "LOSS": 0
-}
+stats = {"GREEN": 0, "LOSS": 0}
 
 nivel_atual = 1
+maior_seq = 0
+hora_maior_seq = "--:--"
 maior_gale = 0
 data_stats = None
 
@@ -44,11 +40,7 @@ def enviar(msg):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg,
-                "parse_mode": "Markdown"
-            },
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
             timeout=10
         )
         print("Telegram:", r.status_code, r.text)
@@ -60,10 +52,7 @@ def enviar_sticker(sticker_id):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendSticker",
-            data={
-                "chat_id": CHAT_ID,
-                "sticker": sticker_id
-            },
+            data={"chat_id": CHAT_ID, "sticker": sticker_id},
             timeout=10
         )
         print("Sticker:", r.status_code, r.text)
@@ -107,16 +96,9 @@ def buscar_resultados():
         return None
 
 
-def cor_nome(cor):
-    return {
-        0: "⚪ BRANCO",
-        1: "🟢 VERDE",
-        2: "⚫ PRETO"
-    }.get(cor, str(cor))
-
-
 def verificar_virada_dia():
-    global data_stats, stats, nivel_atual, maior_gale, sinal_ativo, historico_cores
+    global data_stats, stats, nivel_atual, maior_seq, hora_maior_seq
+    global maior_gale, sinal_ativo, historico_cores
 
     hoje = agora_br().date()
 
@@ -125,12 +107,10 @@ def verificar_virada_dia():
         return
 
     if hoje != data_stats:
-        stats = {
-            "GREEN": 0,
-            "LOSS": 0
-        }
-
+        stats = {"GREEN": 0, "LOSS": 0}
         nivel_atual = 1
+        maior_seq = 0
+        hora_maior_seq = "--:--"
         maior_gale = 0
         sinal_ativo = None
         historico_cores = []
@@ -141,28 +121,33 @@ def verificar_virada_dia():
 
 def assertividade():
     total = stats["GREEN"] + stats["LOSS"]
-
     if total == 0:
         return 0
-
     return (stats["GREEN"] / total) * 100
 
 
 def texto_stats():
     return (
-        "📈 *GERAL*\n"
+        "📈 *GERAL*\n\n"
         f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n\n"
-        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
-        f"GX: {maior_gale:02d}\n\n"
+        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d} | GX: {maior_gale:02d}\n"
+        f"SEQ MAX: {maior_seq:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
 
 def atualizar_gx(gale):
     global maior_gale
-
     if gale > maior_gale:
         maior_gale = gale
+
+
+def atualizar_seq_max():
+    global maior_seq, hora_maior_seq
+
+    if nivel_atual > maior_seq:
+        maior_seq = nivel_atual
+        hora_maior_seq = agora_br().strftime("%H:%M")
 
 
 def enviar_apuracao(texto, resultado_final):
@@ -232,7 +217,7 @@ def finalizar_green(gale):
 
     nivel_atual = 1
 
-    texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}"
+    texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
 
     enviar_apuracao(texto, "GREEN")
 
@@ -244,6 +229,8 @@ def finalizar_loss():
 
     stats["LOSS"] += 1
     atualizar_gx(GALE_MAXIMO)
+
+    atualizar_seq_max()
 
     enviar_apuracao("⛔ *LOSS*", "LOSS")
 
@@ -312,7 +299,7 @@ def processar_resultado(resultado, iniciar=False):
     verificar_padrao()
 
 
-enviar("✅ *Bot PADRÕES iniciado com sucesso!*")
+enviar("✅ *Bot PADRÕES G2 iniciado com sucesso!*")
 
 primeira_leitura = True
 
