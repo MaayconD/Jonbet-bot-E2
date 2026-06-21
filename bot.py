@@ -20,13 +20,13 @@ processados = set()
 
 stats = {"GREEN": 0, "LOSS": 0}
 
-nivel_loss_atual = 0
+nivel_atual = 1
 maior_seq = 0
 hora_maior_seq = "--:--"
-maior_gale = 0
 data_stats = None
 
 mensagem_nivel_id = None
+mensagem_entrada_id = None
 
 
 def enviar(msg):
@@ -131,8 +131,8 @@ def texto_cor(cor):
 
 
 def verificar_virada_dia():
-    global data_stats, stats, nivel_loss_atual, maior_seq
-    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual, mensagem_nivel_id
+    global data_stats, stats, nivel_atual, maior_seq, hora_maior_seq
+    global sinal_ativo, cor_atual, mensagem_nivel_id, mensagem_entrada_id
 
     hoje = agora_br().date()
 
@@ -142,13 +142,17 @@ def verificar_virada_dia():
 
     if hoje != data_stats:
         stats = {"GREEN": 0, "LOSS": 0}
-        nivel_loss_atual = 0
+
+        nivel_atual = 1
         maior_seq = 0
         hora_maior_seq = "--:--"
-        maior_gale = 0
+
         sinal_ativo = None
         cor_atual = None
+
         mensagem_nivel_id = None
+        mensagem_entrada_id = None
+
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -167,20 +171,39 @@ def texto_stats():
     return (
         "📈 *GERAL*\n\n"
         f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n\n"
-        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d} | GX: {maior_gale:02d}\n"
+        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
         f"SEQ MAX: {maior_seq:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
 
-def enviar_apuracao(texto, resultado_final):
-    if resultado_final == "GREEN":
-        enviar_sticker(STICKER_GREEN)
-    elif resultado_final == "LOSS":
-        enviar_sticker(STICKER_LOSS)
+def atualizar_seq_max(nivel):
+    global maior_seq, hora_maior_seq
+
+    if nivel > maior_seq:
+        maior_seq = nivel
+        hora_maior_seq = agora_br().strftime("%H:%M")
+
+
+def enviar_apuracao_green(nivel_green):
+    enviar_sticker(STICKER_GREEN)
 
     msg = (
-        f"{texto}\n\n"
+        "✅ *GREEN SG*\n\n"
+        "📊 *APURAÇÃO*\n\n"
+        f"{texto_stats()}\n\n"
+        f"📌 Recuperou no nível: {nivel_green:02d}/{NIVEL_MAXIMO:02d}"
+    )
+
+    print(msg)
+    enviar(msg)
+
+
+def enviar_apuracao_loss_geral():
+    enviar_sticker(STICKER_LOSS)
+
+    msg = (
+        "⛔ *LOSS GERAL*\n\n"
         "📊 *APURAÇÃO*\n\n"
         f"{texto_stats()}"
     )
@@ -192,20 +215,16 @@ def enviar_apuracao(texto, resultado_final):
 def enviar_mensagem_nivel():
     global mensagem_nivel_id
 
-    if mensagem_nivel_id is not None:
-        apagar_mensagem(mensagem_nivel_id)
-
     msg = (
         "📌 *OPERANDO NÍVEL*\n\n"
-        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d}\n"
-        f"🎯 Entrada: {texto_cor(cor_atual)}"
+        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}"
     )
 
     mensagem_nivel_id = enviar_com_retorno(msg)
 
 
 def enviar_sinal():
-    global sinal_ativo
+    global sinal_ativo, mensagem_entrada_id
 
     msg = (
         "💎 *JONBET DOUBLE VIP*\n\n"
@@ -216,20 +235,23 @@ def enviar_sinal():
     )
 
     sinal_ativo = {
-        "cor": cor_atual,
-        "etapa": 0,
-        "max_gale": 0
+        "cor": cor_atual
     }
 
     print(msg)
-    enviar(msg)
+    mensagem_entrada_id = enviar_com_retorno(msg)
 
 
-def atualizar_gx(gale):
-    global maior_gale
+def apagar_mensagens_pos_apuracao():
+    global mensagem_nivel_id, mensagem_entrada_id
 
-    if gale > maior_gale:
-        maior_gale = gale
+    if mensagem_nivel_id is not None:
+        apagar_mensagem(mensagem_nivel_id)
+        mensagem_nivel_id = None
+
+    if mensagem_entrada_id is not None:
+        apagar_mensagem(mensagem_entrada_id)
+        mensagem_entrada_id = None
 
 
 def trocar_cor():
@@ -241,46 +263,43 @@ def trocar_cor():
         cor_atual = COR_PRETO
 
 
-def atualizar_seq_max():
-    global maior_seq, hora_maior_seq
-
-    if nivel_loss_atual > maior_seq:
-        maior_seq = nivel_loss_atual
-        hora_maior_seq = agora_br().strftime("%H:%M")
-
-
 def finalizar_green():
-    global sinal_ativo, nivel_loss_atual, mensagem_nivel_id
+    global sinal_ativo, nivel_atual, mensagem_nivel_id, mensagem_entrada_id
 
-    stats["GREEN"] += 1
-    atualizar_gx(0)
+    nivel_green = nivel_atual
 
-    nivel_loss_atual = 0
+    stats["GREEN"] += nivel_green
+    stats["LOSS"] += nivel_green - 1
 
-    enviar_apuracao("✅ *GREEN SG*", "GREEN")
+    atualizar_seq_max(nivel_green)
+
+    nivel_atual = 1
+
+    enviar_apuracao_green(nivel_green)
 
     sinal_ativo = None
 
-    # Não apaga a última mensagem de nível quando der GREEN.
-    # Também solta o controle dela para não apagar em uma próxima sequência.
+    # Mantém a última mensagem de nível e entrada como histórico do GREEN.
     mensagem_nivel_id = None
+    mensagem_entrada_id = None
 
     print("✅ GREEN. Mantendo a mesma cor.")
     enviar_sinal()
 
 
 def finalizar_loss():
-    global sinal_ativo, nivel_loss_atual
+    global sinal_ativo, nivel_atual
 
-    stats["LOSS"] += 1
-    atualizar_gx(0)
+    nivel_atual += 1
 
-    nivel_loss_atual += 1
-    atualizar_seq_max()
+    if nivel_atual > NIVEL_MAXIMO:
+        stats["LOSS"] += NIVEL_MAXIMO
+        atualizar_seq_max(NIVEL_MAXIMO)
 
-    if nivel_loss_atual > NIVEL_MAXIMO:
-        nivel_loss_atual = 1
-        print("🔄 Níveis reiniciados após atingir o máximo.")
+        enviar_apuracao_loss_geral()
+
+        nivel_atual = 1
+        print("🔄 LOSS GERAL. Níveis reiniciados.")
 
     sinal_ativo = None
 
@@ -288,6 +307,7 @@ def finalizar_loss():
 
     print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
 
+    apagar_mensagens_pos_apuracao()
     enviar_mensagem_nivel()
     enviar_sinal()
 
