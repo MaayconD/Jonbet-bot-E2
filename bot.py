@@ -2,31 +2,41 @@ import requests
 import time
 from datetime import datetime, timedelta, timezone
 
-TOKEN = "5483533126:AAGIfCbKAXj1dzJa7kgtZKcI83a2dVBdiJA"
-CHAT_ID = "-1003961010489"
+TOKEN = "8722896865:AAHUxId3mJCCg105VoEVadKr0_Dl36keSIM"
+CHAT_ID = "-1003675313042"
 
 URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games/recent/1"
 
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
-COR_PRETO = 2
-COR_VERDE = 1
-NIVEL_MAXIMO = 12
+COR_BRANCO = 0
+
+NIVEIS = {
+    1: 10,
+    2: 20,
+    3: 45
+}
+
+NIVEL_MAXIMO = 3
 
 sinal_ativo = None
-cor_atual = None
 processados = set()
 
-stats = {"GREEN": 0, "LOSS": 0}
-
 nivel_atual = 1
-maior_seq = 0
-hora_maior_seq = "--:--"
 data_stats = None
 
-mensagem_nivel_id = None
-mensagem_entrada_id = None
+stats = {
+    "GREEN": 0,
+    "LOSS": 0
+}
+
+maior_seq_nivel = 0
+maior_seq_gale = 0
+hora_maior_seq = "--:--"
+seq_loss_max_texto = "Nenhum ainda"
+
+mensagem_operacao_id = None
 
 
 def enviar(msg):
@@ -122,17 +132,9 @@ def buscar_resultados():
         return None
 
 
-def texto_cor(cor):
-    if cor == COR_PRETO:
-        return "⚫ PRETO"
-    if cor == COR_VERDE:
-        return "🟢 VERDE"
-    return str(cor)
-
-
 def verificar_virada_dia():
-    global data_stats, stats, nivel_atual, maior_seq, hora_maior_seq
-    global sinal_ativo, cor_atual, mensagem_nivel_id, mensagem_entrada_id
+    global data_stats, stats, nivel_atual, sinal_ativo, mensagem_operacao_id
+    global maior_seq_nivel, maior_seq_gale, hora_maior_seq, seq_loss_max_texto
 
     hoje = agora_br().date()
 
@@ -142,16 +144,14 @@ def verificar_virada_dia():
 
     if hoje != data_stats:
         stats = {"GREEN": 0, "LOSS": 0}
-
         nivel_atual = 1
-        maior_seq = 0
-        hora_maior_seq = "--:--"
-
         sinal_ativo = None
-        cor_atual = None
+        mensagem_operacao_id = None
 
-        mensagem_nivel_id = None
-        mensagem_entrada_id = None
+        maior_seq_nivel = 0
+        maior_seq_gale = 0
+        hora_maior_seq = "--:--"
+        seq_loss_max_texto = "Nenhum ainda"
 
         data_stats = hoje
 
@@ -172,144 +172,147 @@ def texto_stats():
         "📈 *GERAL*\n\n"
         f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n\n"
         f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
-        f"SEQ MAX: {maior_seq:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
+        f"SEQ MAX: {maior_seq_nivel:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
+        "SEQ LOSS MAX:\n"
+        f"{seq_loss_max_texto}\n\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
 
-def atualizar_seq_max(nivel):
-    global maior_seq, hora_maior_seq
+def atualizar_seq_loss_max(nivel_final, gale_final, resultado_final):
+    global maior_seq_nivel, maior_seq_gale, hora_maior_seq, seq_loss_max_texto
 
-    if nivel > maior_seq:
-        maior_seq = nivel
-        hora_maior_seq = agora_br().strftime("%H:%M")
+    if nivel_final < maior_seq_nivel:
+        return
+
+    if nivel_final == maior_seq_nivel and gale_final <= maior_seq_gale:
+        return
+
+    maior_seq_nivel = nivel_final
+    maior_seq_gale = gale_final
+    hora_maior_seq = agora_br().strftime("%H:%M")
+
+    partes = []
+
+    for n in range(1, nivel_final):
+        partes.append(f"N{n}/{NIVEIS[n]}G: ⛔ G{NIVEIS[n]}")
+
+    if resultado_final == "GREEN":
+        partes.append(f"N{nivel_final}/{NIVEIS[nivel_final]}G: ✅ G{gale_final}")
+    else:
+        partes.append(f"N{nivel_final}/{NIVEIS[nivel_final]}G: ⛔ G{gale_final}")
+
+    seq_loss_max_texto = " | ".join(partes)
 
 
-def enviar_apuracao_green(nivel_green):
-    enviar_sticker(STICKER_GREEN)
+def enviar_operacao():
+    global mensagem_operacao_id
+
+    if mensagem_operacao_id is not None:
+        apagar_mensagem(mensagem_operacao_id)
+        mensagem_operacao_id = None
+
+    max_gale = NIVEIS[nivel_atual]
+    gale_atual = sinal_ativo["etapa"]
 
     msg = (
-        "✅ *GREEN SG*\n\n"
-        "📊 *APURAÇÃO*\n\n"
-        f"{texto_stats()}\n\n"
-        f"📌 Recuperou no nível: {nivel_green:02d}/{NIVEL_MAXIMO:02d}"
+        "💎 *JONBET DOUBLE VIP*\n\n"
+        "📊 *Estratégia:* BRANCO\n\n"
+        "🎯 *⚪ BRANCO*\n\n"
+        f"📌 *NÍVEL:* {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
+        f"📌 *GALE:* {gale_atual:02d}/{max_gale:02d}"
     )
 
-    print(msg)
-    enviar(msg)
+    mensagem_operacao_id = enviar_com_retorno(msg)
 
 
-def enviar_apuracao_loss_geral():
-    enviar_sticker(STICKER_LOSS)
+def iniciar_sinal_branco():
+    global sinal_ativo
+
+    max_gale = NIVEIS[nivel_atual]
+
+    sinal_ativo = {
+        "cor": COR_BRANCO,
+        "etapa": 0,
+        "max_gale": max_gale
+    }
+
+    enviar_operacao()
+
+
+def enviar_apuracao_green(gale):
+    enviar_sticker(STICKER_GREEN)
+
+    texto_green = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
 
     msg = (
-        "⛔ *LOSS GERAL*\n\n"
+        f"{texto_green}\n\n"
         "📊 *APURAÇÃO*\n\n"
         f"{texto_stats()}"
     )
 
-    print(msg)
     enviar(msg)
 
 
-def enviar_mensagem_nivel():
-    global mensagem_nivel_id
+def enviar_apuracao_loss_nivel():
+    enviar_sticker(STICKER_LOSS)
+
+    max_gale = NIVEIS[nivel_atual]
 
     msg = (
-        "📌 *OPERANDO NÍVEL*\n\n"
-        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}"
+        f"⛔ *LOSS NÍVEL {nivel_atual:02d}/{NIVEL_MAXIMO:02d}*\n\n"
+        "📊 *APURAÇÃO*\n\n"
+        f"{texto_stats()}\n\n"
+        f"📌 Perdeu no último gale: G{max_gale}"
     )
 
-    mensagem_nivel_id = enviar_com_retorno(msg)
-
-
-def enviar_sinal():
-    global sinal_ativo, mensagem_entrada_id
-
-    msg = (
-        "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* COR FIXA SG\n\n"
-        "⏰ *ENTRADA:*\n"
-        f"🎯 *{texto_cor(cor_atual)}*\n"
-        "♻️ *SEM GALE*"
-    )
-
-    sinal_ativo = {
-        "cor": cor_atual
-    }
-
-    print(msg)
-    mensagem_entrada_id = enviar_com_retorno(msg)
-
-
-def apagar_mensagens_pos_apuracao():
-    global mensagem_nivel_id, mensagem_entrada_id
-
-    if mensagem_nivel_id is not None:
-        apagar_mensagem(mensagem_nivel_id)
-        mensagem_nivel_id = None
-
-    if mensagem_entrada_id is not None:
-        apagar_mensagem(mensagem_entrada_id)
-        mensagem_entrada_id = None
-
-
-def trocar_cor():
-    global cor_atual
-
-    if cor_atual == COR_PRETO:
-        cor_atual = COR_VERDE
-    else:
-        cor_atual = COR_PRETO
+    enviar(msg)
 
 
 def finalizar_green():
-    global sinal_ativo, nivel_atual, mensagem_nivel_id, mensagem_entrada_id
+    global sinal_ativo, nivel_atual, mensagem_operacao_id
 
-    nivel_green = nivel_atual
+    gale = sinal_ativo["etapa"]
 
-    stats["GREEN"] += nivel_green
-    stats["LOSS"] += nivel_green - 1
+    stats["GREEN"] += 1
 
-    atualizar_seq_max(nivel_green)
+    atualizar_seq_loss_max(nivel_atual, gale, "GREEN")
+
+    enviar_apuracao_green(gale)
+
+    sinal_ativo = None
+
+    # Mantém a última mensagem de operação como histórico do GREEN.
+    mensagem_operacao_id = None
 
     nivel_atual = 1
 
-    enviar_apuracao_green(nivel_green)
+    print("✅ GREEN no branco. Reiniciando no nível 01 e entrando novamente.")
+    iniciar_sinal_branco()
+
+
+def finalizar_loss_nivel():
+    global sinal_ativo, nivel_atual, mensagem_operacao_id
+
+    max_gale = NIVEIS[nivel_atual]
+
+    stats["LOSS"] += 1
+
+    atualizar_seq_loss_max(nivel_atual, max_gale, "LOSS")
+
+    enviar_apuracao_loss_nivel()
 
     sinal_ativo = None
 
-    # Mantém a última mensagem de nível e entrada como histórico do GREEN.
-    mensagem_nivel_id = None
-    mensagem_entrada_id = None
+    # Mantém a última mensagem do último gale como histórico do LOSS.
+    mensagem_operacao_id = None
 
-    print("✅ GREEN. Mantendo a mesma cor.")
-    enviar_sinal()
-
-
-def finalizar_loss():
-    global sinal_ativo, nivel_atual
-
-    nivel_atual += 1
-
-    if nivel_atual > NIVEL_MAXIMO:
-        stats["LOSS"] += NIVEL_MAXIMO
-        atualizar_seq_max(NIVEL_MAXIMO)
-
-        enviar_apuracao_loss_geral()
-
+    if nivel_atual >= NIVEL_MAXIMO:
         nivel_atual = 1
-        print("🔄 LOSS GERAL. Níveis reiniciados.")
-
-    sinal_ativo = None
-
-    trocar_cor()
-
-    print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
-
-    apagar_mensagens_pos_apuracao()
-    enviar_mensagem_nivel()
-    enviar_sinal()
+        print("⛔ LOSS no nível 03. Voltando para nível 01 e aguardando novo branco.")
+    else:
+        nivel_atual += 1
+        print(f"⛔ LOSS. Aguardando novo branco para iniciar nível {nivel_atual:02d}.")
 
 
 def verificar_resultado_sinal(resultado):
@@ -318,17 +321,22 @@ def verificar_resultado_sinal(resultado):
     if sinal_ativo is None:
         return
 
-    cor_resultado = resultado["color"]
+    cor = resultado["color"]
 
-    if cor_resultado == sinal_ativo["cor"]:
+    if cor == COR_BRANCO:
         finalizar_green()
-    else:
-        finalizar_loss()
+        return
+
+    sinal_ativo["etapa"] += 1
+
+    if sinal_ativo["etapa"] > sinal_ativo["max_gale"]:
+        finalizar_loss_nivel()
+        return
+
+    enviar_operacao()
 
 
 def processar_resultado(resultado, iniciar=False):
-    global cor_atual
-
     if resultado["id"] in processados:
         return
 
@@ -339,16 +347,14 @@ def processar_resultado(resultado, iniciar=False):
 
     verificar_resultado_sinal(resultado)
 
-    if sinal_ativo is None and cor_atual is None:
-        cor = resultado["color"]
+    cor = resultado["color"]
 
-        if cor == COR_PRETO:
-            cor_atual = COR_PRETO
-            print("⚫ Preto detectado. Iniciando estratégia no PRETO.")
-            enviar_sinal()
+    if sinal_ativo is None and cor == COR_BRANCO:
+        print(f"⚪ Branco detectado. Iniciando nível {nivel_atual:02d}.")
+        iniciar_sinal_branco()
 
 
-enviar("✅ *Bot COR FIXA SG iniciado com sucesso!*")
+enviar("✅ *Bot BRANCO iniciado com sucesso!*")
 
 primeira_leitura = True
 
@@ -366,7 +372,7 @@ while True:
             processar_resultado(resultado, iniciar=True)
 
         primeira_leitura = False
-        print("✅ Histórico inicial carregado. Aguardando sair PRETO para iniciar...")
+        print("✅ Histórico inicial carregado. Aguardando sair BRANCO para iniciar...")
 
     else:
         for resultado in reversed(dados):
