@@ -11,32 +11,28 @@ STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
 COR_BRANCO = 0
+COR_VERDE = 1
+COR_PRETO = 2
 
 NIVEIS = {
-    1: 10,
-    2: 20,
-    3: 45
+    1: 1,
+    2: 9
 }
 
-NIVEL_MAXIMO = 3
+NIVEL_MAXIMO = 2
 
 sinal_ativo = None
+cor_atual = None
+branco_na_operacao = False
 processados = set()
 
-nivel_atual = 1
-data_stats = None
+stats = {"GREEN": 0, "LOSS": 0}
 
-stats = {
-    "GREEN": 0,
-    "LOSS": 0
-}
-
-maior_seq_nivel = 0
-maior_seq_gale = 0
+nivel_loss_atual = 0
+maior_seq = 0
 hora_maior_seq = "--:--"
-seq_loss_max_texto = "Nenhum ainda"
-
-mensagem_operacao_id = None
+maior_gale = 0
+data_stats = None
 
 
 def enviar(msg):
@@ -49,39 +45,6 @@ def enviar(msg):
         print("Telegram:", r.status_code, r.text)
     except Exception as e:
         print("Erro Telegram:", e)
-
-
-def enviar_com_retorno(msg):
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"},
-            timeout=10
-        )
-        print("Telegram:", r.status_code, r.text)
-
-        if r.status_code == 200:
-            return r.json()["result"]["message_id"]
-
-    except Exception as e:
-        print("Erro Telegram:", e)
-
-    return None
-
-
-def apagar_mensagem(message_id):
-    if message_id is None:
-        return
-
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/deleteMessage",
-            data={"chat_id": CHAT_ID, "message_id": message_id},
-            timeout=10
-        )
-        print("Delete:", r.status_code, r.text)
-    except Exception as e:
-        print("Erro ao apagar mensagem:", e)
 
 
 def enviar_sticker(sticker_id):
@@ -98,14 +61,6 @@ def enviar_sticker(sticker_id):
 
 def agora_br():
     return datetime.now(timezone.utc).astimezone(
-        timezone(timedelta(hours=-3))
-    ).replace(tzinfo=None)
-
-
-def hora_br(data_api):
-    return datetime.fromisoformat(
-        data_api.replace("Z", "+00:00")
-    ).astimezone(
         timezone(timedelta(hours=-3))
     ).replace(tzinfo=None)
 
@@ -132,9 +87,26 @@ def buscar_resultados():
         return None
 
 
+def texto_cor(cor):
+    if cor == COR_PRETO:
+        return "⚫ PRETO"
+    if cor == COR_VERDE:
+        return "🟢 VERDE"
+    if cor == COR_BRANCO:
+        return "⚪ BRANCO"
+    return str(cor)
+
+
+def trocar_cor(cor):
+    if cor == COR_PRETO:
+        return COR_VERDE
+    return COR_PRETO
+
+
 def verificar_virada_dia():
-    global data_stats, stats, nivel_atual, sinal_ativo, mensagem_operacao_id
-    global maior_seq_nivel, maior_seq_gale, hora_maior_seq, seq_loss_max_texto
+    global data_stats, stats, nivel_loss_atual, maior_seq
+    global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
+    global branco_na_operacao
 
     hoje = agora_br().date()
 
@@ -144,15 +116,13 @@ def verificar_virada_dia():
 
     if hoje != data_stats:
         stats = {"GREEN": 0, "LOSS": 0}
-        nivel_atual = 1
-        sinal_ativo = None
-        mensagem_operacao_id = None
-
-        maior_seq_nivel = 0
-        maior_seq_gale = 0
+        nivel_loss_atual = 0
+        maior_seq = 0
         hora_maior_seq = "--:--"
-        seq_loss_max_texto = "Nenhum ainda"
-
+        maior_gale = 0
+        sinal_ativo = None
+        cor_atual = None
+        branco_na_operacao = False
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -171,172 +141,151 @@ def texto_stats():
     return (
         "📈 *GERAL*\n\n"
         f"GREEN: {stats['GREEN']:02d} | LOSS: {stats['LOSS']:02d}\n\n"
-        f"SEQ: {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
-        f"SEQ MAX: {maior_seq_nivel:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
-        "SEQ LOSS MAX:\n"
-        f"{seq_loss_max_texto}\n\n"
+        f"SEQ: {nivel_loss_atual:02d}/{NIVEL_MAXIMO:02d} | GX: {maior_gale:02d}\n"
+        f"SEQ MAX: {maior_seq:02d}/{NIVEL_MAXIMO:02d} | {hora_maior_seq}\n\n"
         f"🎯 Assertividade: {assertividade():.2f}%"
     )
 
 
-def atualizar_seq_loss_max(nivel_final, gale_final, resultado_final):
-    global maior_seq_nivel, maior_seq_gale, hora_maior_seq, seq_loss_max_texto
-
-    if nivel_final < maior_seq_nivel:
-        return
-
-    if nivel_final == maior_seq_nivel and gale_final <= maior_seq_gale:
-        return
-
-    maior_seq_nivel = nivel_final
-    maior_seq_gale = gale_final
-    hora_maior_seq = agora_br().strftime("%H:%M")
-
-    partes = []
-
-    for n in range(1, nivel_final):
-        partes.append(f"N{n}/{NIVEIS[n]}G: ⛔ G{NIVEIS[n]}")
-
+def enviar_apuracao(texto, resultado_final):
     if resultado_final == "GREEN":
-        partes.append(f"N{nivel_final}/{NIVEIS[nivel_final]}G: ✅ G{gale_final}")
-    else:
-        partes.append(f"N{nivel_final}/{NIVEIS[nivel_final]}G: ⛔ G{gale_final}")
-
-    seq_loss_max_texto = " | ".join(partes)
-
-
-def enviar_operacao():
-    global mensagem_operacao_id
-
-    if mensagem_operacao_id is not None:
-        apagar_mensagem(mensagem_operacao_id)
-        mensagem_operacao_id = None
-
-    max_gale = NIVEIS[nivel_atual]
-    gale_atual = sinal_ativo["etapa"]
+        enviar_sticker(STICKER_GREEN)
+    elif resultado_final == "LOSS":
+        enviar_sticker(STICKER_LOSS)
 
     msg = (
-        "💎 *JONBET DOUBLE VIP*\n\n"
-        "📊 *Estratégia:* BRANCO\n\n"
-        "🎯 *⚪ BRANCO*\n\n"
-        f"📌 *NÍVEL:* {nivel_atual:02d}/{NIVEL_MAXIMO:02d}\n"
-        f"📌 *GALE:* {gale_atual:02d}/{max_gale:02d}"
-    )
-
-    mensagem_operacao_id = enviar_com_retorno(msg)
-
-
-def iniciar_sinal_branco():
-    global sinal_ativo
-
-    max_gale = NIVEIS[nivel_atual]
-
-    sinal_ativo = {
-        "cor": COR_BRANCO,
-        "etapa": 0,
-        "max_gale": max_gale
-    }
-
-    enviar_operacao()
-
-
-def enviar_apuracao_green(gale):
-    enviar_sticker(STICKER_GREEN)
-
-    texto_green = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
-
-    msg = (
-        f"{texto_green}\n\n"
+        f"{texto}\n\n"
         "📊 *APURAÇÃO*\n\n"
         f"{texto_stats()}"
     )
 
+    print(msg)
     enviar(msg)
 
 
-def enviar_apuracao_loss_nivel():
-    enviar_sticker(STICKER_LOSS)
+def atualizar_gx(gale):
+    global maior_gale
 
-    max_gale = NIVEIS[nivel_atual]
+    if gale > maior_gale:
+        maior_gale = gale
+
+
+def atualizar_seq_max():
+    global maior_seq, hora_maior_seq
+
+    if nivel_loss_atual > maior_seq:
+        maior_seq = nivel_loss_atual
+        hora_maior_seq = agora_br().strftime("%H:%M")
+
+
+def nivel_proxima_entrada():
+    proximo = nivel_loss_atual + 1
+
+    if proximo > NIVEL_MAXIMO:
+        proximo = 1
+
+    return proximo
+
+
+def enviar_sinal():
+    global sinal_ativo
+
+    nivel = nivel_proxima_entrada()
+    max_gale = NIVEIS[nivel]
 
     msg = (
-        f"⛔ *LOSS NÍVEL {nivel_atual:02d}/{NIVEL_MAXIMO:02d}*\n\n"
-        "📊 *APURAÇÃO*\n\n"
-        f"{texto_stats()}\n\n"
-        f"📌 Perdeu no último gale: G{max_gale}"
+        "💎 *JONBET DOUBLE VIP*\n\n"
+        "📊 *Estratégia:* COR FIXA\n\n"
+        "⏰ *ENTRADA:*\n"
+        f"🎯 *{texto_cor(cor_atual)}*\n"
+        f"♻️ *ATÉ G{max_gale}*\n\n"
+        f"📌 *NÍVEL:* {nivel:02d}/{NIVEL_MAXIMO:02d}"
     )
 
+    sinal_ativo = {
+        "cor": cor_atual,
+        "etapa": 0,
+        "max_gale": max_gale,
+        "nivel": nivel
+    }
+
+    print(msg)
     enviar(msg)
 
 
-def finalizar_green():
-    global sinal_ativo, nivel_atual, mensagem_operacao_id
-
-    gale = sinal_ativo["etapa"]
+def finalizar_green(gale):
+    global sinal_ativo, nivel_loss_atual, branco_na_operacao
 
     stats["GREEN"] += 1
+    atualizar_gx(gale)
 
-    atualizar_seq_loss_max(nivel_atual, gale, "GREEN")
+    nivel_loss_atual = 0
+    branco_na_operacao = False
 
-    enviar_apuracao_green(gale)
+    texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
+
+    enviar_apuracao(texto, "GREEN")
 
     sinal_ativo = None
 
-    # Mantém a última mensagem de operação como histórico do GREEN.
-    mensagem_operacao_id = None
-
-    nivel_atual = 1
-
-    print("✅ GREEN no branco. Reiniciando no nível 01 e entrando novamente.")
-    iniciar_sinal_branco()
+    print("✅ GREEN. Mantendo a mesma cor.")
+    enviar_sinal()
 
 
-def finalizar_loss_nivel():
-    global sinal_ativo, nivel_atual, mensagem_operacao_id
-
-    max_gale = NIVEIS[nivel_atual]
+def finalizar_loss():
+    global sinal_ativo, nivel_loss_atual, branco_na_operacao, cor_atual
 
     stats["LOSS"] += 1
+    atualizar_gx(sinal_ativo["max_gale"])
 
-    atualizar_seq_loss_max(nivel_atual, max_gale, "LOSS")
+    nivel_loss_atual += 1
+    atualizar_seq_max()
 
-    enviar_apuracao_loss_nivel()
+    enviar_apuracao("⛔ *LOSS*", "LOSS")
+
+    if nivel_loss_atual >= NIVEL_MAXIMO:
+        nivel_loss_atual = 0
+        print("🔄 Níveis reiniciados após atingir o máximo.")
 
     sinal_ativo = None
 
-    # Mantém a última mensagem do último gale como histórico do LOSS.
-    mensagem_operacao_id = None
-
-    if nivel_atual >= NIVEL_MAXIMO:
-        nivel_atual = 1
-        print("⛔ LOSS no nível 03. Voltando para nível 01 e aguardando novo branco.")
+    if branco_na_operacao:
+        print(f"⚪ Branco saiu na operação. Mantendo a cor {texto_cor(cor_atual)}.")
     else:
-        nivel_atual += 1
-        print(f"⛔ LOSS. Aguardando novo branco para iniciar nível {nivel_atual:02d}.")
+        cor_atual = trocar_cor(cor_atual)
+        print(f"⛔ LOSS sem branco. Alternando para {texto_cor(cor_atual)}.")
+
+    branco_na_operacao = False
+
+    enviar_sinal()
 
 
 def verificar_resultado_sinal(resultado):
-    global sinal_ativo
+    global sinal_ativo, branco_na_operacao
 
     if sinal_ativo is None:
         return
 
-    cor = resultado["color"]
+    cor_resultado = resultado["color"]
 
-    if cor == COR_BRANCO:
-        finalizar_green()
+    if cor_resultado == COR_BRANCO:
+        branco_na_operacao = True
+
+    if cor_resultado == sinal_ativo["cor"]:
+        finalizar_green(sinal_ativo["etapa"])
         return
 
     sinal_ativo["etapa"] += 1
 
     if sinal_ativo["etapa"] > sinal_ativo["max_gale"]:
-        finalizar_loss_nivel()
-        return
-
-    enviar_operacao()
+        finalizar_loss()
+    else:
+        print(f"⏳ Aguardando G{sinal_ativo['etapa']}...")
 
 
 def processar_resultado(resultado, iniciar=False):
+    global cor_atual
+
     if resultado["id"] in processados:
         return
 
@@ -347,14 +296,16 @@ def processar_resultado(resultado, iniciar=False):
 
     verificar_resultado_sinal(resultado)
 
-    cor = resultado["color"]
+    if sinal_ativo is None and cor_atual is None:
+        cor = resultado["color"]
 
-    if sinal_ativo is None and cor == COR_BRANCO:
-        print(f"⚪ Branco detectado. Iniciando nível {nivel_atual:02d}.")
-        iniciar_sinal_branco()
+        if cor == COR_PRETO:
+            cor_atual = COR_PRETO
+            print("⚫ Preto detectado. Iniciando estratégia no PRETO.")
+            enviar_sinal()
 
 
-enviar("✅ *Bot BRANCO iniciado com sucesso!*")
+enviar("✅ *Bot COR FIXA 2 níveis iniciado com sucesso!*")
 
 primeira_leitura = True
 
@@ -372,7 +323,7 @@ while True:
             processar_resultado(resultado, iniciar=True)
 
         primeira_leitura = False
-        print("✅ Histórico inicial carregado. Aguardando sair BRANCO para iniciar...")
+        print("✅ Histórico inicial carregado. Aguardando sair PRETO para iniciar...")
 
     else:
         for resultado in reversed(dados):
