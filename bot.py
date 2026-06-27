@@ -10,20 +10,26 @@ URL = "https://jonbet.bet.br/api/singleplayer-originals/originals/roulette_games
 STICKER_GREEN = "CAACAgEAAxkBAAEBuhtkFBbPbho5iUL3Cw0Zs2WBNdupaAACQgQAAnQVwEe3Q77HvZ8W3y8E"
 STICKER_LOSS = "CAACAgEAAxkBAAEBuh9kFBbVKxciIe1RKvDQBeDu8WfhFAACXwIAAq-xwEfpc4OHHyAliS8E"
 
-COR_BRANCO = 0
 COR_VERDE = 1
 COR_PRETO = 2
 
+# VERSÃO 1: G1 E G9
 NIVEIS = {
     1: 1,
     2: 9
 }
 
+# VERSÃO 2: G2 E G9
+# Para usar G2 e G9, comente o bloco acima e descomente este:
+# NIVEIS = {
+#     1: 2,
+#     2: 9
+# }
+
 NIVEL_MAXIMO = 2
 
 sinal_ativo = None
 cor_atual = None
-branco_na_operacao = False
 processados = set()
 
 stats = {"GREEN": 0, "LOSS": 0}
@@ -92,8 +98,6 @@ def texto_cor(cor):
         return "⚫ PRETO"
     if cor == COR_VERDE:
         return "🟢 VERDE"
-    if cor == COR_BRANCO:
-        return "⚪ BRANCO"
     return str(cor)
 
 
@@ -106,7 +110,6 @@ def trocar_cor(cor):
 def verificar_virada_dia():
     global data_stats, stats, nivel_loss_atual, maior_seq
     global hora_maior_seq, maior_gale, sinal_ativo, cor_atual
-    global branco_na_operacao
 
     hoje = agora_br().date()
 
@@ -122,7 +125,6 @@ def verificar_virada_dia():
         maior_gale = 0
         sinal_ativo = None
         cor_atual = None
-        branco_na_operacao = False
         data_stats = hoje
 
         enviar("🔄 *Novo dia iniciado! Estatísticas zeradas.*")
@@ -214,13 +216,12 @@ def enviar_sinal():
 
 
 def finalizar_green(gale):
-    global sinal_ativo, nivel_loss_atual, branco_na_operacao
+    global sinal_ativo, nivel_loss_atual
 
     stats["GREEN"] += 1
     atualizar_gx(gale)
 
     nivel_loss_atual = 0
-    branco_na_operacao = False
 
     texto = "✅ *GREEN SG*" if gale == 0 else f"✅ *GREEN G{gale}*"
 
@@ -233,7 +234,7 @@ def finalizar_green(gale):
 
 
 def finalizar_loss():
-    global sinal_ativo, nivel_loss_atual, branco_na_operacao, cor_atual
+    global sinal_ativo, nivel_loss_atual, cor_atual
 
     stats["LOSS"] += 1
     atualizar_gx(sinal_ativo["max_gale"])
@@ -249,27 +250,19 @@ def finalizar_loss():
 
     sinal_ativo = None
 
-    if branco_na_operacao:
-        print(f"⚪ Branco saiu na operação. Mantendo a cor {texto_cor(cor_atual)}.")
-    else:
-        cor_atual = trocar_cor(cor_atual)
-        print(f"⛔ LOSS sem branco. Alternando para {texto_cor(cor_atual)}.")
-
-    branco_na_operacao = False
+    cor_atual = trocar_cor(cor_atual)
+    print(f"⛔ LOSS. Alternando para {texto_cor(cor_atual)}.")
 
     enviar_sinal()
 
 
 def verificar_resultado_sinal(resultado):
-    global sinal_ativo, branco_na_operacao
+    global sinal_ativo
 
     if sinal_ativo is None:
         return
 
     cor_resultado = resultado["color"]
-
-    if cor_resultado == COR_BRANCO:
-        branco_na_operacao = True
 
     if cor_resultado == sinal_ativo["cor"]:
         finalizar_green(sinal_ativo["etapa"])
@@ -305,7 +298,7 @@ def processar_resultado(resultado, iniciar=False):
             enviar_sinal()
 
 
-enviar("✅ *Bot COR FIXA 2 níveis iniciado com sucesso!*")
+enviar("✅ *Bot COR FIXA iniciado com sucesso!*")
 
 primeira_leitura = True
 
